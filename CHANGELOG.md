@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-02-25
+
+### Changed
+
+- Typography switched from League Gothic to Arial for a cleaner, more minimal look
+- Title and link moved to top-left corner, white color
+- Removed Google Fonts dependency
+- Structure positioned lower in the scene for better framing
+- Bloom parameters tuned separately for desktop and mobile to avoid overexposure
+- Camera pulled back for more surrounding dark space
+
 ## [1.0.0] - 2026-02-25
 
 ### Added
