@@ -15,18 +15,15 @@
 <meta name="twitter:title" content="Uncarriable">
 <meta name="twitter:description" content="An art collective. Undefined, uncontainable.">
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAALUlEQVR4nO3OIQEAAAwCMKK9fykeAzMxv+TaKQEBAQEBAQEBAQEBAQEBgXXgAVSU+HnCashAAAAAAElFTkSuQmCC">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=League+Gothic&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000}
 canvas{display:block}
 #grain{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0.08;mix-blend-mode:overlay;z-index:10}
-#ui{position:fixed;bottom:1.5rem;left:1.8rem;z-index:20;font-family:'League Gothic',sans-serif;text-transform:lowercase;letter-spacing:0.3em}
-#title{font-size:0.75rem;color:rgba(255,255,255,0.18);line-height:1.6}
-#link{display:block;font-size:0.75rem;color:rgba(255,255,255,0.09);text-decoration:none;letter-spacing:0.3em;font-family:'League Gothic',sans-serif;transition:color 0.6s}
-#link:hover{color:rgba(255,255,255,0.25)}
+#ui{position:fixed;top:1.5rem;left:1.8rem;z-index:20;font-family:Arial,Helvetica,sans-serif;text-transform:lowercase;letter-spacing:0.3em}
+#title{font-size:0.75rem;color:#fff;line-height:1.6}
+#link{display:block;font-size:0.75rem;color:rgba(255,255,255,0.45);text-decoration:none;letter-spacing:0.3em;font-family:Arial,Helvetica,sans-serif;transition:color 0.6s}
+#link:hover{color:rgba(255,255,255,0.8)}
 </style>
 </head>
 <body>
@@ -128,7 +125,7 @@ function tubeHeight(nx, nz) {
 
   const h = dome * (1.0 + wave1 + wave2 + wave3 + wave4 + ridge1 + ridge2 + asym) + spire + ring1 + ring2;
 
-  return Math.max(0.05, h * 2.0);
+  return Math.max(0.05, h * 1.4);
 }
 
 // --- Build tube structure ---
@@ -177,7 +174,7 @@ mesh.instanceMatrix.needsUpdate = true;
 tubeGroup.add(mesh);
 
 // Center the group
-tubeGroup.position.set(0, 0, 0);
+tubeGroup.position.set(0, -0.4, 0);
 
 // Subtle ambient to avoid total black crushing
 const ambient = new THREE.AmbientLight('#111111', 0.1);
