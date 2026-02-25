@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uncarriable</title>
+<meta name="description" content="An art collective. Undefined, uncontainable.">
+<meta property="og:title" content="Uncarriable">
+<meta property="og:description" content="An art collective. Undefined, uncontainable.">
+<meta property="og:url" content="https://uncarriable.com">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://uncarriable.com/og.png">
+<meta name="theme-color" content="#0040ff">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Uncarriable">
+<meta name="twitter:description" content="An art collective. Undefined, uncontainable.">
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAALUlEQVR4nO3OIQEAAAwCMKK9fykeAzMxv+TaKQEBAQEBAQEBAQEBAQEBgXXgAVSU+HnCashAAAAAAElFTkSuQmCC">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=League+Gothic&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block}
+#grain{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0.08;mix-blend-mode:overlay;z-index:10}
+#ui{position:fixed;bottom:1.5rem;left:1.8rem;z-index:20;font-family:'League Gothic',sans-serif;text-transform:lowercase;letter-spacing:0.3em}
+#title{font-size:0.75rem;color:rgba(255,255,255,0.18);line-height:1.6}
+#link{display:block;font-size:0.75rem;color:rgba(255,255,255,0.09);text-decoration:none;letter-spacing:0.3em;font-family:'League Gothic',sans-serif;transition:color 0.6s}
+#link:hover{color:rgba(255,255,255,0.25)}
+</style>
+</head>
+<body>
+
+<canvas id="grain"></canvas>
+<div id="ui">
+  <div id="title">uncarriable</div>
+  <a id="link" href="https://linktr.ee/it_gets_easier" target="_blank" rel="noopener">linktr.ee/it_gets_easier</a>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// --- Config ---
+const COLORS = [
+  new THREE.Color('#0040ff'), // electric blue
+  new THREE.Color('#ff4400'), // volcanic orange
+  new THREE.Color('#8800ff'), // dense violet
+  new THREE.Color('#cc0033')  // deep ruby
+];
+const CYCLE_DURATION = 270; // seconds per full color cycle (~4.5 min)
+const BLOOM_STRENGTH = 1.8;
+const BLOOM_RADIUS = 0.85;
+const BLOOM_THRESHOLD = 0.05;
+
+// --- Detect mobile ---
+const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent) || window.innerWidth < 768;
+const GRID_SIZE = isMobile ? 28 : 50; // tubes per side
+const GRID_SPACING = isMobile ? 0.11 : 0.08;
+const TUBE_RADIUS = 0.02;
+
+// --- Scene setup ---
+const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+renderer.toneMapping = THREE.ReinhardToneMapping;
+renderer.toneMappingExposure = 1.5;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#050505');
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 3.5, 6);
+
+// --- Bloom post-processing ---
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  BLOOM_STRENGTH,
+  BLOOM_RADIUS,
+  BLOOM_THRESHOLD
+);
+composer.addPass(bloomPass);
+
+// --- Height function ---
+// Complex layered math to create an alien/crystal silhouette
+function tubeHeight(nx, nz) {
+  // nx, nz are normalized -1..1
+  const r = Math.sqrt(nx * nx + nz * nz);
+  const angle = Math.atan2(nz, nx);
+
+  // Base dome falloff
+  const dome = Math.max(0, 1.0 - r * 0.9);
+
+  // Layered sinusoidal complexity
+  const wave1 = Math.sin(nx * 5.3 + nz * 3.7) * 0.35;
+  const wave2 = Math.cos(nz * 7.1 - nx * 2.3) * 0.25;
+  const wave3 = Math.sin(r * 9.0 + angle * 3.0) * 0.2;
+  const wave4 = Math.cos(angle * 5.0 + r * 6.0) * Math.sin(r * 4.0) * 0.3;
+
+  // Sharp crystalline ridges
+  const ridge1 = Math.abs(Math.sin(nx * 11.0 + nz * 7.0)) * 0.15;
+  const ridge2 = Math.abs(Math.cos(angle * 7.0 + r * 5.0)) * 0.2;
+
+  // Central spire
+  const spire = Math.exp(-r * r * 8.0) * 1.2;
+
+  // Asymmetric distortion
+  const asym = Math.sin(nx * 3.0) * Math.cos(nz * 5.0) * 0.2;
+
+  // Ring features
+  const ring1 = Math.exp(-Math.pow(r - 0.4, 2) * 60.0) * 0.5;
+  const ring2 = Math.exp(-Math.pow(r - 0.7, 2) * 40.0) * 0.3;
+
+  const h = dome * (1.0 + wave1 + wave2 + wave3 + wave4 + ridge1 + ridge2 + asym) + spire + ring1 + ring2;
+
+  return Math.max(0.05, h * 2.0);
+}
+
+// --- Build tube structure ---
+const tubeGroup = new THREE.Group();
+scene.add(tubeGroup);
+
+// Shared geometry segments
+const radialSegments = isMobile ? 4 : 6;
+
+// Use InstancedMesh for performance
+// We'll create a unit cylinder and instance it
+const unitGeo = new THREE.CylinderGeometry(TUBE_RADIUS, TUBE_RADIUS, 1, radialSegments);
+const material = new THREE.MeshStandardMaterial({
+  color: '#000000',
+  emissive: COLORS[0].clone(),
+  emissiveIntensity: 1.0,
+  roughness: 0.3,
+  metalness: 0.7
+});
+
+const totalTubes = GRID_SIZE * GRID_SIZE;
+const mesh = new THREE.InstancedMesh(unitGeo, material, totalTubes);
+mesh.frustumCulled = false;
+
+const dummy = new THREE.Object3D();
+const halfGrid = (GRID_SIZE - 1) * GRID_SPACING * 0.5;
+
+let idx = 0;
+for (let ix = 0; ix < GRID_SIZE; ix++) {
+  for (let iz = 0; iz < GRID_SIZE; iz++) {
+    const x = ix * GRID_SPACING - halfGrid;
+    const z = iz * GRID_SPACING - halfGrid;
+    const nx = (ix / (GRID_SIZE - 1)) * 2 - 1;
+    const nz = (iz / (GRID_SIZE - 1)) * 2 - 1;
+
+    const h = tubeHeight(nx, nz);
+
+    dummy.position.set(x, h * 0.5, z);
+    dummy.scale.set(1, h, 1);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(idx, dummy.matrix);
+    idx++;
+  }
+}
+mesh.instanceMatrix.needsUpdate = true;
+tubeGroup.add(mesh);
+
+// Center the group
+tubeGroup.position.set(0, 0, 0);
+
+// Subtle ambient to avoid total black crushing
+const ambient = new THREE.AmbientLight('#111111', 0.1);
+scene.add(ambient);
+
+// --- Grain canvas ---
+const grainCanvas = document.getElementById('grain');
+const grainCtx = grainCanvas.getContext('2d');
+
+function resizeGrain() {
+  // Lower resolution grain for performance
+  const scale = 0.5;
+  grainCanvas.width = Math.floor(window.innerWidth * scale);
+  grainCanvas.height = Math.floor(window.innerHeight * scale);
+}
+resizeGrain();
+
+function renderGrain() {
+  const w = grainCanvas.width;
+  const h = grainCanvas.height;
+  const imageData = grainCtx.createImageData(w, h);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const v = Math.random() * 255;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+    data[i + 3] = 40; // subtle alpha
+  }
+  grainCtx.putImageData(imageData, 0, 0);
+}
+renderGrain();
+
+// Regenerate grain every 100ms (not every frame)
+setInterval(renderGrain, 100);
+
+// --- Color cycling ---
+function lerpColor(a, b, t) {
+  const c = new THREE.Color();
+  c.r = a.r + (b.r - a.r) * t;
+  c.g = a.g + (b.g - a.g) * t;
+  c.b = a.b + (b.b - a.b) * t;
+  return c;
+}
+
+function getCurrentEmissive(time) {
+  const segmentDuration = CYCLE_DURATION / COLORS.length;
+  const cycleTime = time % CYCLE_DURATION;
+  const segIndex = Math.floor(cycleTime / segmentDuration);
+  const segProgress = (cycleTime % segmentDuration) / segmentDuration;
+
+  // Smooth easing
+  const t = segProgress * segProgress * (3 - 2 * segProgress);
+
+  const from = COLORS[segIndex % COLORS.length];
+  const to = COLORS[(segIndex + 1) % COLORS.length];
+  return lerpColor(from, to, t);
+}
+
+// --- Animation loop ---
+const clock = new THREE.Clock();
+const orbitRadius = isMobile ? 5.5 : 5.0;
+const orbitSpeed = 0.015; // very slow orbit (rad/s)
+const vertOscAmp = 0.4;
+const vertOscFreq = 0.08;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const elapsed = clock.getElapsedTime();
+
+  // Camera orbit
+  const angle = elapsed * orbitSpeed;
+  camera.position.x = Math.sin(angle) * orbitRadius;
+  camera.position.z = Math.cos(angle) * orbitRadius;
+  camera.position.y = 2.2 + Math.sin(elapsed * vertOscFreq) * vertOscAmp;
+  camera.lookAt(0, 0.8, 0);
+
+  // Color cycling
+  const emissive = getCurrentEmissive(elapsed);
+  material.emissive.copy(emissive);
+
+  composer.render();
+}
+animate();
+
+// --- Resize handler ---
+function onResize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  resizeGrain();
+}
+window.addEventListener('resize', onResize);
+</script>
+</body>
+</html>
