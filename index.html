@@ -19,15 +19,9 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000}
 canvas{display:block}
-#grain{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:0.25;mix-blend-mode:overlay;z-index:10}
-#scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:11;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.06) 2px,rgba(0,0,0,0.06) 4px);animation:scanmove 8s linear infinite}
-@keyframes scanmove{0%{background-position:0 0}100%{background-position:0 100px}}
 </style>
 </head>
 <body>
-
-<canvas id="grain"></canvas>
-<div id="scanlines"></div>
 
 <script type="importmap">
 {
@@ -56,66 +50,63 @@ const COLORS = [
   new THREE.Color('#cc0033')
 ];
 const CYCLE_DURATION = 270;
-const BLOOM_STRENGTH = isMobile ? 1.3 : 1.2;
-const BLOOM_RADIUS = isMobile ? 0.65 : 0.7;
-const BLOOM_THRESHOLD = isMobile ? 0.08 : 0.1;
-const GRID_SIZE = isMobile ? 24 : 40;
-const GRID_SPACING = isMobile ? 0.11 : 0.08;
-const TUBE_RADIUS = 0.02;
+const BLOOM_STRENGTH = isMobile ? 0.8 : 0.7;
+const BLOOM_RADIUS = 0.5;
+const BLOOM_THRESHOLD = isMobile ? 0.15 : 0.2;
+const GRID_SIZE = isMobile ? 8 : 12;
+const GRID_SPACING = isMobile ? 0.45 : 0.35;
+const TUBE_RADIUS = 0.035;
 
 // --- Scene setup ---
-const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.toneMapping = THREE.ReinhardToneMapping;
 renderer.toneMappingExposure = isMobile ? 1.0 : 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#050505');
-scene.fog = new THREE.FogExp2('#050505', 0.018);
+scene.background = new THREE.Color('#0a0a12');
+scene.fog = new THREE.FogExp2('#0a0a12', 0.018);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 3.5, 6);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 2.5, 4);
 
-// --- Post-processing: Bloom + Chromatic Aberration + Vignette ---
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD
-));
+// --- Morphing (GPU vertex displacement) ---
+const morphTime = { value: 0 };
+function addMorphing(mat) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uMorphTime = morphTime;
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      '#include <common>\nuniform float uMorphTime;'
+    );
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `vec4 mvPosition = vec4(transformed, 1.0);
+       #ifdef USE_BATCHING
+         mvPosition = batchingMatrix * mvPosition;
+       #endif
+       #ifdef USE_INSTANCING
+         mvPosition = instanceMatrix * mvPosition;
+       #endif
+       float morphW = sin(mvPosition.x * 3.0 + uMorphTime * 0.3) * 0.12
+                    + cos(mvPosition.z * 2.5 + uMorphTime * 0.25) * 0.08
+                    + sin((mvPosition.x - mvPosition.z) * 1.5 + uMorphTime * 0.15) * 0.06;
+       mvPosition.y *= (1.0 + morphW);
+       mvPosition = modelViewMatrix * mvPosition;
+       gl_Position = projectionMatrix * mvPosition;`
+    );
+  };
+}
 
-// Combined chromatic aberration + vignette shader
-const FXShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    chromaAmount: { value: isMobile ? 0.002 : 0.003 },
-    vignetteStart: { value: 0.4 },
-    vignetteEnd: { value: 1.2 }
-  },
-  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float chromaAmount;
-    uniform float vignetteStart;
-    uniform float vignetteEnd;
-    varying vec2 vUv;
-    void main(){
-      vec2 dir = vUv - vec2(0.5);
-      vec2 offset = dir * chromaAmount;
-      float r = texture2D(tDiffuse, vUv + offset).r;
-      float g = texture2D(tDiffuse, vUv).g;
-      float b = texture2D(tDiffuse, vUv - offset).b;
-      vec3 col = vec3(r, g, b);
-      float dist = length(dir) * 2.0;
-      float vig = 1.0 - smoothstep(vignetteStart, vignetteEnd, dist);
-      col *= vig;
-      gl_FragColor = vec4(col, 1.0);
-    }`
-};
-composer.addPass(new ShaderPass(FXShader));
+// --- Materials ---
+const material = new THREE.MeshBasicMaterial({
+  color: COLORS[0].clone()
+});
+addMorphing(material);
+
 
 // --- Height function ---
 function tubeHeight(nx, nz) {
@@ -136,7 +127,7 @@ function tubeHeight(nx, nz) {
   return Math.max(0.05, h * 1.4);
 }
 
-// --- Build main structure ---
+// --- Build structure ---
 function buildStructure(group, mat, gridSize, spacing, scale) {
   const geo = new THREE.BoxGeometry(TUBE_RADIUS * 1.6 * scale, 1, TUBE_RADIUS * 1.6 * scale);
   const total = gridSize * gridSize;
@@ -162,10 +153,19 @@ function buildStructure(group, mat, gridSize, spacing, scale) {
       inst.setMatrixAt(i++, d.matrix);
     }
   }
+  const tmpCol = new THREE.Color();
   for (let j = 0; j < total; j++) {
+    const ix = Math.floor(j / gridSize);
+    const iz = j % gridSize;
+    const px = ix / (gridSize - 1);
+    const pz = iz / (gridSize - 1);
     const t = hs[j] / mH;
-    const b = 0.3 + t * 0.7;
-    cAttr[j * 3] = b; cAttr[j * 3 + 1] = b; cAttr[j * 3 + 2] = b;
+    // Rainbow gradient based on position, brighter at top
+    const hue = (px * 0.6 + pz * 0.4 + t * 0.15) % 1.0;
+    tmpCol.setHSL(hue, 0.75, 0.35 + t * 0.35);
+    cAttr[j * 3]     = tmpCol.r;
+    cAttr[j * 3 + 1] = tmpCol.g;
+    cAttr[j * 3 + 2] = tmpCol.b;
   }
   inst.instanceColor = new THREE.InstancedBufferAttribute(cAttr, 3);
   inst.instanceMatrix.needsUpdate = true;
@@ -173,42 +173,35 @@ function buildStructure(group, mat, gridSize, spacing, scale) {
   return inst;
 }
 
-// Main structure
+// --- Main structure ---
 const tubeGroup = new THREE.Group();
 scene.add(tubeGroup);
-const material = new THREE.MeshStandardMaterial({
-  color: '#000000', emissive: COLORS[0].clone(),
-  emissiveIntensity: 0.8, roughness: 0.3, metalness: 0.7
-});
 buildStructure(tubeGroup, material, GRID_SIZE, GRID_SPACING, 1.0);
 tubeGroup.position.set(0, -0.4, 0);
 
-// Ghost structure (smaller echo)
-const ghostGroup = new THREE.Group();
-scene.add(ghostGroup);
-const ghostMat = new THREE.MeshStandardMaterial({
-  color: '#000000', emissive: COLORS[0].clone(),
-  emissiveIntensity: 0.3, roughness: 0.5, metalness: 0.5,
-  transparent: true, opacity: 0.35
+// --- Reflection (mirrored structure below floor) ---
+const reflMat = new THREE.MeshBasicMaterial({
+  color: COLORS[0].clone(), transparent: true, opacity: 0.2
 });
-const ghostSize = isMobile ? 16 : 25;
-buildStructure(ghostGroup, ghostMat, ghostSize, GRID_SPACING, 0.5);
-ghostGroup.position.set(1.8, -0.6, -1.2);
-ghostGroup.rotation.y = Math.PI * 0.3;
+addMorphing(reflMat);
+const reflGroup = new THREE.Group();
+scene.add(reflGroup);
+const reflGrid = isMobile ? 6 : 8;
+buildStructure(reflGroup, reflMat, reflGrid, GRID_SPACING, 1.0);
+reflGroup.position.set(0, -0.4, 0);
+reflGroup.scale.y = -1;
 
-// --- Reflective floor ---
-const floorGeo = new THREE.PlaneGeometry(20, 20);
-const floorMat = new THREE.MeshStandardMaterial({
-  color: '#030308', roughness: 0.2, metalness: 0.95,
-  transparent: true, opacity: 0.6
+// --- Floor ---
+const floorMat = new THREE.MeshBasicMaterial({
+  color: '#060612', transparent: true, opacity: 0.45
 });
-const floor = new THREE.Mesh(floorGeo, floorMat);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.position.y = -0.4;
 scene.add(floor);
 
 // --- Particles ---
-const PARTICLE_COUNT = isMobile ? 60 : 150;
+const PARTICLE_COUNT = isMobile ? 20 : 50;
 const particleGeo = new THREE.BufferGeometry();
 const particlePositions = new Float32Array(PARTICLE_COUNT * 3);
 const particleSpeeds = new Float32Array(PARTICLE_COUNT);
@@ -220,40 +213,101 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
 }
 particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
 const particleMat = new THREE.PointsMaterial({
-  color: '#ffffff', size: isMobile ? 0.025 : 0.018,
+  color: '#ffffff', size: isMobile ? 0.012 : 0.008,
   transparent: true, opacity: 0.25,
   blending: THREE.AdditiveBlending, depthWrite: false
 });
 const particles = new THREE.Points(particleGeo, particleMat);
 scene.add(particles);
 
-const ambient = new THREE.AmbientLight('#111111', 0.1);
-scene.add(ambient);
 
-// --- Grain ---
-const grainCanvas = document.getElementById('grain');
-const grainCtx = grainCanvas.getContext('2d');
-function resizeGrain() {
-  grainCanvas.width = Math.floor(window.innerWidth * 0.5);
-  grainCanvas.height = Math.floor(window.innerHeight * 0.5);
-}
-resizeGrain();
-function renderGrain() {
-  const w = grainCanvas.width, h = grainCanvas.height;
-  const img = grainCtx.createImageData(w, h);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const v = Math.random() * 255;
-    d[i] = v; d[i+1] = v; d[i+2] = v; d[i+3] = 40;
-  }
-  grainCtx.putImageData(img, 0, 0);
-}
-renderGrain();
-setInterval(renderGrain, 100);
+// --- Post-processing ---
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(
+  new THREE.Vector2(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2)),
+  BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD
+));
+
+// All FX in one shader: chromatic aberration + film burn + grain + scanlines + vignette
+const FXShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    chromaAmount: { value: isMobile ? 0.002 : 0.003 },
+    vignetteStart: { value: 0.4 },
+    vignetteEnd: { value: 1.2 },
+    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+  },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform float chromaAmount;
+    uniform float vignetteStart;
+    uniform float vignetteEnd;
+    uniform vec2 resolution;
+    varying vec2 vUv;
+
+    // Fast GPU noise (hash-based)
+    float hash(vec2 p) {
+      vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+      p3 += dot(p3, p3.yzx + 33.33);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    void main(){
+      vec2 uv = vUv;
+
+      // --- Tilt-shift depth of field ---
+      float dofDist = abs(vUv.y - 0.42);
+      float dofBlur = smoothstep(0.05, 0.45, dofDist) * ${isMobile ? '0.003' : '0.004'};
+      vec3 col = vec3(0.0);
+      col += texture2D(tDiffuse, uv).rgb * 0.36;
+      col += texture2D(tDiffuse, uv + vec2(dofBlur, 0.0)).rgb * 0.16;
+      col += texture2D(tDiffuse, uv - vec2(dofBlur, 0.0)).rgb * 0.16;
+      col += texture2D(tDiffuse, uv + vec2(0.0, dofBlur)).rgb * 0.16;
+      col += texture2D(tDiffuse, uv - vec2(0.0, dofBlur)).rgb * 0.16;
+
+      // Chromatic aberration
+      vec2 cd = uv - vec2(0.5);
+      vec2 co = cd * chromaAmount;
+      col.r = mix(col.r, texture2D(tDiffuse, uv + co).r, 0.5);
+      col.b = mix(col.b, texture2D(tDiffuse, uv - co).b, 0.5);
+
+      // Film burn / light leaks
+      vec2 lp1 = uv - vec2(0.1 + sin(uTime * 0.07) * 0.15, 0.2 + cos(uTime * 0.09) * 0.2);
+      vec2 lp2 = uv - vec2(0.85 + cos(uTime * 0.05) * 0.1, 0.7 + sin(uTime * 0.08) * 0.15);
+      col += vec3(1.0, 0.6, 0.2) * exp(-dot(lp1, lp1) * 8.0) * 0.08;
+      col += vec3(0.8, 0.3, 0.6) * exp(-dot(lp2, lp2) * 10.0) * 0.06;
+      ${!isMobile ? `
+      vec2 lp3 = uv - vec2(0.5 + sin(uTime * 0.06) * 0.3, 0.9 + cos(uTime * 0.04) * 0.05);
+      col += vec3(0.4, 0.6, 1.0) * exp(-dot(lp3, lp3) * 12.0) * 0.05;
+      ` : ''}
+
+      // Grain
+      vec2 grainCoord = gl_FragCoord.xy + vec2(uTime * 100.0, uTime * 77.0);
+      float grain = hash(grainCoord) * 0.06 - 0.03;
+      col += grain;
+
+      // Scanlines
+      float scanline = sin(gl_FragCoord.y * 1.5) * 0.012;
+      col -= scanline;
+
+      // Letterbox (cinematic bars)
+      float barSize = 0.07;
+      float barFade = smoothstep(0.0, barSize, vUv.y) * smoothstep(0.0, barSize, 1.0 - vUv.y);
+      col *= barFade;
+
+      gl_FragColor = vec4(col, 1.0);
+    }`
+};
+const fxPass = new ShaderPass(FXShader);
+composer.addPass(fxPass);
 
 // --- Color cycling ---
 function lerpColor(a, b, t) {
-  return new THREE.Color(a.r+(b.r-a.r)*t, a.g+(b.g-a.g)*t, a.b+(b.b-a.b)*t);
+  return new THREE.Color(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
 }
 function getCurrentEmissive(time) {
   const seg = CYCLE_DURATION / COLORS.length;
@@ -261,56 +315,57 @@ function getCurrentEmissive(time) {
   const si = Math.floor(ct / seg);
   const sp = (ct % seg) / seg;
   const t = sp * sp * (3 - 2 * sp);
-  return lerpColor(COLORS[si % COLORS.length], COLORS[(si+1) % COLORS.length], t);
+  return lerpColor(COLORS[si % COLORS.length], COLORS[(si + 1) % COLORS.length], t);
 }
 
 // --- Animation ---
 const clock = new THREE.Clock();
-const orbitRadius = isMobile ? 7.5 : 6.5;
-const orbitSpeed = 0.015;
-const vertOscAmp = 0.4;
-const vertOscFreq = 0.08;
+const orbitRadius = isMobile ? 1.0 : 1.2;
+const white = new THREE.Color(1, 1, 1);
 
 function animate() {
   requestAnimationFrame(animate);
   const elapsed = clock.getElapsedTime();
 
-  // Camera orbit
-  const angle = elapsed * orbitSpeed;
-  camera.position.x = Math.sin(angle) * orbitRadius;
-  camera.position.z = Math.cos(angle) * orbitRadius;
-  camera.position.y = 2.2 + Math.sin(elapsed * vertOscFreq) * vertOscAmp;
-  camera.lookAt(0, 0.8, 0);
+  morphTime.value = elapsed;
+  fxPass.uniforms.uTime.value = elapsed;
 
-  // Structure rotations
-  tubeGroup.rotation.y = elapsed * 0.008;
-  ghostGroup.rotation.y = Math.PI * 0.3 - elapsed * 0.005;
+  // Cinematic camera — slow orbit + multi-frequency sway
+  const angle = elapsed * 0.006;
+  const sway1 = Math.sin(elapsed * 0.017) * 0.15;
+  const sway2 = Math.cos(elapsed * 0.011) * 0.08;
+  camera.position.x = Math.sin(angle) * orbitRadius + sway1;
+  camera.position.z = Math.cos(angle) * orbitRadius + sway2;
+  camera.position.y = 0.35 + Math.sin(elapsed * 0.025) * 0.12 + Math.cos(elapsed * 0.013) * 0.06;
+  camera.lookAt(sway2 * 0.3, 0.7, sway1 * 0.3);
 
-  // Emissive pulse (slow breathing via intensity)
-  const pulse = 0.7 + Math.sin(elapsed * 0.4) * 0.15;
-  material.emissiveIntensity = pulse;
-  ghostMat.emissiveIntensity = pulse * 0.4;
+  // Structure rotation
+  tubeGroup.rotation.y = elapsed * 0.005;
+  reflGroup.rotation.y = elapsed * 0.005;
+
+  // Pulse
+  const pulse = 0.7 + Math.sin(elapsed * 0.3) * 0.15;
 
   // Particles
   const pos = particles.geometry.attributes.position.array;
   for (let i = 0; i < PARTICLE_COUNT; i++) {
-    pos[i*3+1] += particleSpeeds[i];
-    if (pos[i*3+1] > 5) {
-      pos[i*3] = (Math.random()-0.5)*8;
-      pos[i*3+1] = -0.5;
-      pos[i*3+2] = (Math.random()-0.5)*8;
+    pos[i * 3 + 1] += particleSpeeds[i];
+    if (pos[i * 3 + 1] > 5) {
+      pos[i * 3] = (Math.random() - 0.5) * 8;
+      pos[i * 3 + 1] = -0.5;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 8;
     }
-    pos[i*3] += Math.sin(elapsed*0.5+i)*0.0003;
-    pos[i*3+2] += Math.cos(elapsed*0.3+i)*0.0003;
+    pos[i * 3] += Math.sin(elapsed * 0.5 + i) * 0.0003;
+    pos[i * 3 + 2] += Math.cos(elapsed * 0.3 + i) * 0.0003;
   }
   particles.geometry.attributes.position.needsUpdate = true;
 
-  // Color cycling
+  // Color cycling — subtle tint so rainbow instance colors show through
   const emissive = getCurrentEmissive(elapsed);
-  material.emissive.copy(emissive);
-  ghostMat.emissive.copy(emissive);
+  material.color.set(1, 1, 1).lerp(emissive, 0.25).multiplyScalar(pulse);
+  reflMat.color.set(1, 1, 1).lerp(emissive, 0.15).multiplyScalar(pulse * 0.4);
   particleMat.color.copy(emissive);
-  floorMat.color.copy(emissive).multiplyScalar(0.03);
+  floorMat.color.copy(emissive).multiplyScalar(0.05);
 
   composer.render();
 }
@@ -323,7 +378,7 @@ function onResize() {
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   composer.setSize(w, h);
-  resizeGrain();
+  fxPass.uniforms.resolution.value.set(w, h);
 }
 window.addEventListener('resize', onResize);
 </script>
